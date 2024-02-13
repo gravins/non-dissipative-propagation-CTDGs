@@ -1,6 +1,11 @@
 # <ins>C</ins>ontinuous-<ins>T</ins>ime Graph <ins>A</ins>nti-Symmetric <ins>N</ins>etwork (CTAN).
 Official reference implementation of our paper [___"Effective Non-Dissipative Propagation for Continuous-Time Dynamic Graphs"___](https://openreview.net/forum?id=zAHFC2LNEe) accepted at the Temporal Graph Learning Workshop @ NeurIPS 2023
 
+
+### Credits
+Many thanks to **Giulio Lovisotto** ([Github](https://github.com/giuliolovisotto) / [Homepage]( https://giuliolovisotto.github.io/)) for his invaluable help on this project.
+
+
 ## Requirements
 _Note: we assume Miniconda/Anaconda is installed, otherwise see this [link](https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html) for correct installation. The proper Python version is installed during the first step of the following procedure._
 
