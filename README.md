@@ -1,5 +1,6 @@
 # <ins>C</ins>ontinuous-<ins>T</ins>ime Graph <ins>A</ins>nti-Symmetric <ins>N</ins>etwork (CTAN).
-Official reference implementation of our paper [___"Effective Non-Dissipative Propagation for Continuous-Time Dynamic Graphs"___](https://openreview.net/forum?id=zAHFC2LNEe) accepted at the Temporal Graph Learning Workshop @ NeurIPS 2023
+Official reference implementation of our paper [___"Long Range Propagation on Continuous-Time Dynamic Graphs"___](https://openreview.net/) accepted at ICML 2024,
+and [___"Effective Non-Dissipative Propagation for Continuous-Time Dynamic Graphs"___](https://openreview.net/forum?id=zAHFC2LNEe) accepted at the Temporal Graph Learning Workshop @ NeurIPS 2023
 
 
 ### Credits
