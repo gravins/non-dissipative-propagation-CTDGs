@@ -16,6 +16,7 @@ cluster=True
 log=True
 cpus_per_task=1
 gpus_per_task=0.
+metric='loss'
 
 ray.init()
 
@@ -30,7 +31,7 @@ for data in SYNTHETIC_SEQUENCE:
 
         cmd = (f"python3 -u main.py --data_dir {folder}/DATA --data_name {data} --save_dir {folder}/RESULTS_sequence "
                f"--model {model} --num_runs {num_runs} --num_final_runs {num_final_runs} --epochs {epochs} --patience {patience} "
-               f"--num_cpus_per_task {cpus_per_task} --num_gpus_per_task {gpus_per_task} --batch 128"
+               f"--metric {metric} --num_cpus_per_task {cpus_per_task} --num_gpus_per_task {gpus_per_task} --batch 128 "
                f"{'--cluster' if cluster else ''} --verbose {'--log' if log else ''} "
                f"> {folder}/out_{model}_{data} 2> {folder}/err_{model}_{data}")
 
