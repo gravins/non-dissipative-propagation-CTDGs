@@ -2,6 +2,15 @@
 Official reference implementation of our paper [___"Long Range Propagation on Continuous-Time Dynamic Graphs"___](https://openreview.net/) accepted at ICML 2024,
 and [___"Effective Non-Dissipative Propagation for Continuous-Time Dynamic Graphs"___](https://openreview.net/forum?id=zAHFC2LNEe) accepted at the Temporal Graph Learning Workshop @ NeurIPS 2023
 
+Please consider citing us
+
+	  @inproceedings{gravina2024ctan,
+	     title={Long Range Propagation on Continuous-Time Dynamic Graphs},
+	     author={Alessio Gravina and Giulio Lovisotto and Claudio Gallicchio and Davide Bacciu and Claas Grohnfeldt},
+	     booktitle={Forty-first International Conference on Machine Learning},
+	     year={2024},
+	     url={https://openreview.net/forum?id=gVg8V9isul}
+	  }
 
 ### Credits
 Many thanks to **Giulio Lovisotto** ([Github](https://github.com/giuliolovisotto) / [Homepage]( https://giuliolovisotto.github.io/)) for his invaluable help on this project.
