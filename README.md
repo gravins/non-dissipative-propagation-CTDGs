@@ -1,9 +1,9 @@
 # <ins>C</ins>ontinuous-<ins>T</ins>ime Graph <ins>A</ins>nti-Symmetric <ins>N</ins>etwork (CTAN).
-Official reference implementation of our paper [___"Long Range Propagation on Continuous-Time Dynamic Graphs"___](https://openreview.net/) accepted at ICML 2024,
+Official reference implementation of our paper [___"Long Range Propagation on Continuous-Time Dynamic Graphs"___](https://proceedings.mlr.press/v235/gravina24a.html) accepted at ICML 2024,
 and [___"Effective Non-Dissipative Propagation for Continuous-Time Dynamic Graphs"___](https://openreview.net/forum?id=zAHFC2LNEe) accepted at the Temporal Graph Learning Workshop @ NeurIPS 2023
 
 Please consider citing us
-
+<!---
 	  @inproceedings{gravina2024ctan,
 	     title={Long Range Propagation on Continuous-Time Dynamic Graphs},
 	     author={Alessio Gravina and Giulio Lovisotto and Claudio Gallicchio and Davide Bacciu and Claas Grohnfeldt},
@@ -11,7 +11,21 @@ Please consider citing us
 	     year={2024},
 	     url={https://openreview.net/forum?id=gVg8V9isul}
 	  }
-
+-->
+	  @InProceedings{gravina2024ctan,
+	    title = {Long Range Propagation on Continuous-Time Dynamic Graphs},
+	    author = {Gravina, Alessio and Lovisotto, Giulio and Gallicchio, Claudio and Bacciu, Davide and Grohnfeldt, Claas},
+	    booktitle = {Proceedings of the 41st International Conference on Machine Learning},
+	    pages = {16206--16225},
+	    year = {2024},
+	    editor = {Salakhutdinov, Ruslan and Kolter, Zico and Heller, Katherine and Weller, Adrian and Oliver, Nuria and Scarlett, Jonathan and Berkenkamp, Felix},
+	    volume = {235},
+	    series = {Proceedings of Machine Learning Research},
+	    month = {21--27 Jul},
+	    publisher = {PMLR},
+	    pdf = {https://raw.githubusercontent.com/mlresearch/v235/main/assets/gravina24a/gravina24a.pdf},
+	    url = {https://proceedings.mlr.press/v235/gravina24a.html},
+	  }
 ### Credits
 Many thanks to **Giulio Lovisotto** ([Github](https://github.com/giuliolovisotto) / [Homepage]( https://giuliolovisotto.github.io/)) for his invaluable help on this project.
 
