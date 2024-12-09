@@ -1,5 +1,6 @@
 from utils import cartesian_product
 from models import *
+from models.ctdg_models import CTAN_tgb
 
 
 wiki = {  

@@ -203,7 +203,7 @@ def tgb_test(data, model, loader, neg_sampler,
     return {"mrr": perf_metrics}, None
 
 
-def tgb_train(data, model, optimizer,
+def tgb_train(data, model, optimizer, scheduler,
               train_loader, criterion,
               neighbor_loader, helper,
               device='cpu', pbar=False):
@@ -269,7 +269,6 @@ def tgb_train(data, model, optimizer,
         loss = criterion(pos_out, torch.ones_like(pos_out))
         loss += criterion(neg_out, torch.zeros_like(neg_out))
     
-
         losses.append(loss.item())
 
         # Update memory and neighbor loader with ground-truth state.
@@ -277,6 +276,17 @@ def tgb_train(data, model, optimizer,
         neighbor_loader.insert(src, pos_dst)
 
         loss.backward()
+
+        if pbar and jj % 50 == 0:
+            total_norm = 0
+            for p in model.parameters():
+                if p.grad is not None:    
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            total_norm = total_norm ** (1. / 2)
+            print(f"Loss: {np.array(losses[-20:]).mean():.5f}, LR: {optimizer.param_groups[0]['lr']:.5f}, Scheduler LR: {scheduler.get_last_lr()[0]:.5f}, Grad Norm: {total_norm:.5f}")
+
+        # clip_grad_value_(model.parameters(), 0.1)
 
         optimizer.step()
         model.detach_memory()
@@ -443,6 +453,7 @@ def tgb_link_prediction(model_instance, conf):
 
 
 def tgb_link_prediction_single(model_instance, conf):
+    print(conf)
     # Set the configuration seed
     set_seed(conf['seed'])
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -514,162 +525,183 @@ def tgb_link_prediction_single(model_instance, conf):
     epoch_times = []
     dataset.load_val_ns()
     val_perf_list = []
-    for e in range(best_epoch, conf['epochs']):
-        t0 = time.time()
+    try: 
+        for e in range(best_epoch, conf['epochs']):
+            t0 = time.time()
 
-        train_losses: list[float] = tgb_train(
-            data=data,
-            model=model,
-            optimizer=optimizer,
-            train_loader=train_loader,
-            criterion=criterion,
-            neighbor_loader=neighbor_loader,
-            helper=assoc, 
-            device=device,
-            pbar=conf["debug"]
-        )
-
-        print('\nEpoch {:d}. avg loss {:.5f}\n'.format(e, np.array(train_losses).mean()))
-
-        if e == 1 or (e % conf["validate_every"] == 0 or e >= conf['epochs']):
-            tr_scores = {'loss': float(np.array(train_losses).mean())}
-
-            print(f'Running tgb_test bc {e=} or {conf["validate_every"]=}')
-
-            model.reset_memory()
-            neighbor_loader.reset_state()
-
-            _, _ = tgb_test(
-                data=data, 
+            train_losses: list[float] = tgb_train(
+                data=data,
                 model=model,
-                loader=train_loader,
-                neg_sampler=neg_sampler,
+                optimizer=optimizer,
+                scheduler=lr_scheduler,
+                train_loader=train_loader,
+                criterion=criterion,
                 neighbor_loader=neighbor_loader,
-                split_mode="train",
-                helper=assoc,
-                evaluator=evaluator,
-                metric=metric,
+                helper=assoc, 
                 device=device,
-                pbar=conf['debug']
-            )
-             
-            # validation
-            # dict[str, float]
-            vl_scores, _ = tgb_test(
-                data=data, 
-                model=model,
-                loader=val_loader,
-                neg_sampler=neg_sampler,
-                neighbor_loader=neighbor_loader,
-                split_mode="val_fast",
-                helper=assoc,
-                evaluator=evaluator,
-                metric=metric,
-                device=device,
-                validation_subsample=conf["validation_subsample"],
-                batched_val=conf["validation_batched"],
                 pbar=conf["debug"]
             )
 
-            print("End of tgb_test:")
-            print(f'Train :{tr_scores}')
-            print(f'Val :{vl_scores}\n')
+            print('\nEpoch {:d}. avg loss {:.5f}\n'.format(e, np.array(train_losses).mean()))
 
-            val_perf_list.append(vl_scores[conf['metric']])
+            vl_scores = {"mrr": -np.inf}
+            tr_scores = {'loss': np.inf}
+
+            if e == 1 or (e % conf["validate_every"] == 0 or e >= conf['epochs']):
+                tr_scores = {'loss': float(np.array(train_losses).mean())}
+
+                print(f'Running tgb_test bc {e=} or {conf["validate_every"]=}')
+
+                model.reset_memory()
+                neighbor_loader.reset_state()
+
+                _, _ = tgb_test(
+                    data=data, 
+                    model=model,
+                    loader=train_loader,
+                    neg_sampler=neg_sampler,
+                    neighbor_loader=neighbor_loader,
+                    split_mode="train",
+                    helper=assoc,
+                    evaluator=evaluator,
+                    metric=metric,
+                    device=device,
+                    pbar=conf['debug']
+                )
+                
+                # validation
+                # dict[str, float]
+                vl_scores, _ = tgb_test(
+                    data=data, 
+                    model=model,
+                    loader=val_loader,
+                    neg_sampler=neg_sampler,
+                    neighbor_loader=neighbor_loader,
+                    split_mode="val_fast",
+                    helper=assoc,
+                    evaluator=evaluator,
+                    metric=metric,
+                    device=device,
+                    validation_subsample=conf["validation_subsample"],
+                    batched_val=conf["validation_batched"],
+                    pbar=conf["debug"]
+                )
+
+                print("End of tgb_test:")
+                print(f'Train :{tr_scores}')
+                print(f'Val :{vl_scores}\n')
+
+                val_perf_list.append(vl_scores[conf['metric']])
         
-        lr_scheduler.step(vl_scores[conf['metric']]) 
-            
-        history.append({
-            'train': tr_scores,
-            'val': vl_scores
-        })
 
-        if len(history) == 1 or vl_scores[conf['metric']] > best_score:
-            best_score = vl_scores[conf['metric']]
-            best_epoch = e
-            print(f"\nSaving Best model at epoch {e}\n")
-            torch.save({
-                'train_ended': False,
-                'epoch': best_epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler': lr_scheduler.state_dict(),
-                'best_score': best_score,
-                'loss': (tr_scores["loss"], None, None),
-                'tr_scores': tr_scores,
-                'vl_scores': vl_scores,
-                'true_values': (None, None, None),
-                'history': history
-            }, path_save_best)
-            
-        epoch_times.append(time.time()-t0)
+            lr_scheduler.step(vl_scores[conf['metric']]) 
+                
+            history.append({
+                'train': tr_scores,
+                'val': vl_scores
+            })
 
-        print(f'Epoch {e}: {np.mean(epoch_times)} +/- {np.std(epoch_times)} seconds per epoch') 
+            if len(history) == 1 or vl_scores[conf['metric']] > best_score:
+                best_score = vl_scores[conf['metric']]
+                best_epoch = e
+                print(f"\nSaving Best model at epoch {e}\n")
+                torch.save({
+                    'train_ended': False,
+                    'epoch': best_epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler': lr_scheduler.state_dict(),
+                    'best_score': best_score,
+                    'loss': (tr_scores["loss"], None, None),
+                    'tr_scores': tr_scores,
+                    'vl_scores': vl_scores,
+                    'true_values': (None, None, None),
+                    'history': history
+                }, path_save_best)
+                
+            epoch_times.append(time.time()-t0)
 
-        if e - best_epoch > conf['patience']:
-            break
+            print(f'Epoch {e}: {np.mean(epoch_times)} +/- {np.std(epoch_times)} seconds per epoch') 
 
-    # Evaluate on test
-    print('Evaluating from scratch. ')
-    print(f'Loading model at epoch {best_epoch:d}...')
-    
-    ckpt = torch.load(path_save_best, map_location=device)
-    model.load_state_dict(ckpt['model_state_dict'])
+            if e - best_epoch > conf['patience']:
+                break
+            if np.isnan(tr_scores["loss"]):
+                break
+            if vl_scores['mrr'] == 1.0:
+                break
 
-    model.reset_memory()
-    neighbor_loader.reset_state()
 
-    tr_scores, _ = tgb_test(
-        data=data, 
-        model=model,
-        loader=train_loader,
-        neg_sampler=neg_sampler,
-        neighbor_loader=neighbor_loader,
-        split_mode="train",
-        helper=assoc,
-        evaluator=evaluator,
-        metric=metric,
-        device=device,
-        pbar=conf['debug']
-    )
+        # Evaluate on test
+        print('Evaluating from scratch. ')
+        print(f'Loading model at epoch {best_epoch:d}...')
+        
+        ckpt = torch.load(path_save_best, map_location=device)
+        model.load_state_dict(ckpt['model_state_dict'])
 
-    vl_scores, _ = tgb_test(
-        data=data, 
-        model=model,
-        loader=val_loader,
-        neg_sampler=neg_sampler,
-        neighbor_loader=neighbor_loader,
-        split_mode="val",
-        helper=assoc,
-        evaluator=evaluator,
-        metric=metric,
-        device=device,
-        pbar=conf['debug']
-    )
+        model.reset_memory()
+        neighbor_loader.reset_state()
 
-    dataset.load_test_ns()
+        tr_scores, _ = tgb_test(
+            data=data, 
+            model=model,
+            loader=train_loader,
+            neg_sampler=neg_sampler,
+            neighbor_loader=neighbor_loader,
+            split_mode="train",
+            helper=assoc,
+            evaluator=evaluator,
+            metric=metric,
+            device=device,
+            pbar=conf['debug']
+        )
 
-    ts_scores, _ = tgb_test(
-        data=data, 
-        model=model,
-        loader=test_loader,
-        neg_sampler=neg_sampler,
-        neighbor_loader=neighbor_loader,
-        split_mode="test",
-        helper=assoc,
-        evaluator=evaluator,
-        metric=metric,
-        device=device,
-        pbar=conf['debug']
-    )
+        vl_scores, _ = tgb_test(
+            data=data, 
+            model=model,
+            loader=val_loader,
+            neg_sampler=neg_sampler,
+            neighbor_loader=neighbor_loader,
+            split_mode="val",
+            helper=assoc,
+            evaluator=evaluator,
+            metric=metric,
+            device=device,
+            pbar=conf['debug']
+        )
 
-    ckpt['test_score'] = ts_scores
-    ckpt['val_score'] = vl_scores
-    ckpt['train_score'] = tr_scores
-    ckpt['train_ended'] = True
-    torch.save(ckpt, path_save_best)
+        dataset.load_test_ns()
 
-    history = ckpt['history'] if conf['log'] else None
+        ts_scores, _ = tgb_test(
+            data=data, 
+            model=model,
+            loader=test_loader,
+            neg_sampler=neg_sampler,
+            neighbor_loader=neighbor_loader,
+            split_mode="test",
+            helper=assoc,
+            evaluator=evaluator,
+            metric=metric,
+            device=device,
+            pbar=conf['debug']
+        )
+
+        ckpt['test_score'] = ts_scores
+        ckpt['val_score'] = vl_scores
+        ckpt['train_score'] = tr_scores
+        ckpt['train_ended'] = True
+        torch.save(ckpt, path_save_best)
+
+        history = ckpt['history'] if conf['log'] else None
+    except RuntimeError as e:
+        # Allow to fail for gradient explosion
+        # Make a moot results run
+        ckpt = {}
+        ckpt['test_score'] = {conf['metric']: -np.inf}
+        ckpt['val_score'] = {conf['metric']: -np.inf}
+        ckpt['train_score'] = {conf['metric']: -np.inf}
+        ckpt['train_ended'] = True
+        ckpt["epoch"] = -1
+        history = None
 
     return ckpt['test_score'], ckpt['val_score'], ckpt['train_score'], ckpt['epoch'], conf, history
 

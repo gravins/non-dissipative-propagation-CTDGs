@@ -496,9 +496,13 @@ class CTAN_tgb(CTAN):
                  # Distinguish between link prediction and sequence prediction
                  predict_dst: bool = False,
                  # conv type Transformer
-                 conv_type: str = 'TransformerConv'
+                 conv_type: str = 'TransformerConv',
+                 separable: bool = False,
+                 layernorm: bool = None
         ):
         super().__init__(num_nodes, edge_dim, memory_dim, time_dim, node_dim, num_iters, gnn_act, gnn_act_kwargs, epsilon, gamma, readout_hidden, readout_out, mean_delta_t, std_delta_t, init_time, final_act, predict_dst, conv_type)
+        self.separable = separable
+        self.layernorm = layernorm
         self.readout = TGBLinkPredictor(memory_dim)
 
     def forward(self, batch, n_id, msg, t, edge_index, id_mapper):

@@ -193,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument('--validation_batched', help='In validation, whether to batch samples before forward.', action='store_true')
 
     parser.add_argument('--cluster', help='Experiments run on a cluster.', action='store_true')
+    parser.add_argument('--slurm', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--parallelism', help='The degree of parallelism, ie, maximum number of parallel jobs.', default=None, type=int)
     parser.add_argument('--overwrite_ckpt', help='Overwrite checkpoint.', action='store_true')
@@ -272,7 +273,7 @@ if __name__ == "__main__":
     
     # Run model selection 
     model_instance, get_conf = MODEL_CONFS[args.model]
-    conf_list = list(get_conf(num_nodes, edge_dim, node_dim, out_dim, init_time, mean_delta_t, std_delta_t, {}))
+    conf_list = list(get_conf(num_nodes, edge_dim, node_dim, out_dim, init_time, mean_delta_t, std_delta_t))
     df = run_configs(
         conf_list = conf_list,
         args = args, 
