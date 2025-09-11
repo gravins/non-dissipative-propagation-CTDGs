@@ -12,7 +12,7 @@ wiki = {
     'gamma': [0.1],
     'sampler_size': [32],
     'final_act': [None, 'tanh'], 
-    'separable': [False]
+    'layernorm': [True, False]
 }
 
 review = {  
@@ -25,7 +25,7 @@ review = {
     'gamma': [0.1, 0.001],
     'sampler_size': [32],
     'final_act': [None, 'tanh'], 
-    'separable': [False]
+    'layernorm': [True, False]
 }
 
 coin = {  
@@ -38,7 +38,7 @@ coin = {
     'gamma': [0.1, 0.001],
     'sampler_size': [32],
     'final_act': [None, 'tanh'], 
-    'separable': [False]
+    'layernorm': [True, False]
 }
 
 comment = {
@@ -51,7 +51,7 @@ comment = {
     'gamma': [0.1],
     'sampler_size': [32],
     'final_act': [None],
-    'separable': [False]
+    'layernorm': [True, False]
 }
   
 def get_CTAN_conf(confs, num_nodes, edge_dim, node_dim, out_dim, init_time, mean_delta_t, std_delta_t):
@@ -73,7 +73,7 @@ def get_CTAN_conf(confs, num_nodes, edge_dim, node_dim, out_dim, init_time, mean
                 'std_delta_t': std_delta_t,
                 'init_time': init_time,
                 'final_act': params['final_act'],
-                'separable': params['separable']
+                'layernorm': params['layernorm']
             },
             'optim_params':{
                 'lr': params['lr'],

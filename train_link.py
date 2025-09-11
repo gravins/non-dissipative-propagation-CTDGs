@@ -514,162 +514,178 @@ def tgb_link_prediction_single(model_instance, conf):
     epoch_times = []
     dataset.load_val_ns()
     val_perf_list = []
-    for e in range(best_epoch, conf['epochs']):
-        t0 = time.time()
+    try:
+        for e in range(best_epoch, conf['epochs']):
+            t0 = time.time()
 
-        train_losses: list[float] = tgb_train(
-            data=data,
-            model=model,
-            optimizer=optimizer,
-            train_loader=train_loader,
-            criterion=criterion,
-            neighbor_loader=neighbor_loader,
-            helper=assoc, 
-            device=device,
-            pbar=conf["debug"]
-        )
-
-        print('\nEpoch {:d}. avg loss {:.5f}\n'.format(e, np.array(train_losses).mean()))
-
-        if e == 1 or (e % conf["validate_every"] == 0 or e >= conf['epochs']):
-            tr_scores = {'loss': float(np.array(train_losses).mean())}
-
-            print(f'Running tgb_test bc {e=} or {conf["validate_every"]=}')
-
-            model.reset_memory()
-            neighbor_loader.reset_state()
-
-            _, _ = tgb_test(
-                data=data, 
+            train_losses: list[float] = tgb_train(
+                data=data,
                 model=model,
-                loader=train_loader,
-                neg_sampler=neg_sampler,
+                optimizer=optimizer,
+                train_loader=train_loader,
+                criterion=criterion,
                 neighbor_loader=neighbor_loader,
-                split_mode="train",
-                helper=assoc,
-                evaluator=evaluator,
-                metric=metric,
+                helper=assoc, 
                 device=device,
-                pbar=conf['debug']
-            )
-             
-            # validation
-            # dict[str, float]
-            vl_scores, _ = tgb_test(
-                data=data, 
-                model=model,
-                loader=val_loader,
-                neg_sampler=neg_sampler,
-                neighbor_loader=neighbor_loader,
-                split_mode="val_fast",
-                helper=assoc,
-                evaluator=evaluator,
-                metric=metric,
-                device=device,
-                validation_subsample=conf["validation_subsample"],
-                batched_val=conf["validation_batched"],
                 pbar=conf["debug"]
             )
 
-            print("End of tgb_test:")
-            print(f'Train :{tr_scores}')
-            print(f'Val :{vl_scores}\n')
+            print('\nEpoch {:d}. avg loss {:.5f}\n'.format(e, np.array(train_losses).mean()))
+            vl_scores = {conf['metric']: -np.inf} # conf['metric'] == MRR score 
+            if e == 1 or (e % conf["validate_every"] == 0 or e >= conf['epochs']):
+                tr_scores = {'loss': float(np.array(train_losses).mean())}
 
-            val_perf_list.append(vl_scores[conf['metric']])
+                print(f'Running tgb_test bc {e=} or {conf["validate_every"]=}')
+
+                model.reset_memory()
+                neighbor_loader.reset_state()
+
+                _, _ = tgb_test(
+                    data=data, 
+                    model=model,
+                    loader=train_loader,
+                    neg_sampler=neg_sampler,
+                    neighbor_loader=neighbor_loader,
+                    split_mode="train",
+                    helper=assoc,
+                    evaluator=evaluator,
+                    metric=metric,
+                    device=device,
+                    pbar=conf['debug']
+                )
+                
+                # validation
+                # dict[str, float]
+                vl_scores, _ = tgb_test(
+                    data=data, 
+                    model=model,
+                    loader=val_loader,
+                    neg_sampler=neg_sampler,
+                    neighbor_loader=neighbor_loader,
+                    split_mode="val_fast",
+                    helper=assoc,
+                    evaluator=evaluator,
+                    metric=metric,
+                    device=device,
+                    validation_subsample=conf["validation_subsample"],
+                    batched_val=conf["validation_batched"],
+                    pbar=conf["debug"]
+                )
+
+                print("End of tgb_test:")
+                print(f'Train :{tr_scores}')
+                print(f'Val :{vl_scores}\n')
+
+                val_perf_list.append(vl_scores[conf['metric']])
+            
+            if vl_scores[conf['metric']] >= 0.:
+                lr_scheduler.step(vl_scores[conf['metric']]) 
+                
+            history.append({
+                'train': tr_scores,
+                'val': vl_scores
+            })
+
+            if len(history) == 1 or vl_scores[conf['metric']] > best_score:
+                best_score = vl_scores[conf['metric']]
+                best_epoch = e
+                print(f"\nSaving Best model at epoch {e}\n")
+                torch.save({
+                    'train_ended': False,
+                    'epoch': best_epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler': lr_scheduler.state_dict(),
+                    'best_score': best_score,
+                    'loss': (tr_scores["loss"], None, None),
+                    'tr_scores': tr_scores,
+                    'vl_scores': vl_scores,
+                    'true_values': (None, None, None),
+                    'history': history
+                }, path_save_best)
+                
+            epoch_times.append(time.time()-t0)
+
+            print(f'Epoch {e}: {np.mean(epoch_times)} +/- {np.std(epoch_times)} seconds per epoch') 
+
+            if e - best_epoch > conf['patience']:
+                break
+
+            if vl_scores[conf['metric']] == 1.0: # conf['metric'] == MRR score
+                break
+
+        # Evaluate on test
+        print('Evaluating from scratch. ')
+        print(f'Loading model at epoch {best_epoch:d}...')
         
-        lr_scheduler.step(vl_scores[conf['metric']]) 
-            
-        history.append({
-            'train': tr_scores,
-            'val': vl_scores
-        })
+        ckpt = torch.load(path_save_best, map_location=device)
+        model.load_state_dict(ckpt['model_state_dict'])
 
-        if len(history) == 1 or vl_scores[conf['metric']] > best_score:
-            best_score = vl_scores[conf['metric']]
-            best_epoch = e
-            print(f"\nSaving Best model at epoch {e}\n")
-            torch.save({
-                'train_ended': False,
-                'epoch': best_epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler': lr_scheduler.state_dict(),
-                'best_score': best_score,
-                'loss': (tr_scores["loss"], None, None),
-                'tr_scores': tr_scores,
-                'vl_scores': vl_scores,
-                'true_values': (None, None, None),
-                'history': history
-            }, path_save_best)
-            
-        epoch_times.append(time.time()-t0)
+        model.reset_memory()
+        neighbor_loader.reset_state()
 
-        print(f'Epoch {e}: {np.mean(epoch_times)} +/- {np.std(epoch_times)} seconds per epoch') 
+        tr_scores, _ = tgb_test(
+            data=data, 
+            model=model,
+            loader=train_loader,
+            neg_sampler=neg_sampler,
+            neighbor_loader=neighbor_loader,
+            split_mode="train",
+            helper=assoc,
+            evaluator=evaluator,
+            metric=metric,
+            device=device,
+            pbar=conf['debug']
+        )
 
-        if e - best_epoch > conf['patience']:
-            break
+        vl_scores, _ = tgb_test(
+            data=data, 
+            model=model,
+            loader=val_loader,
+            neg_sampler=neg_sampler,
+            neighbor_loader=neighbor_loader,
+            split_mode="val",
+            helper=assoc,
+            evaluator=evaluator,
+            metric=metric,
+            device=device,
+            pbar=conf['debug']
+        )
 
-    # Evaluate on test
-    print('Evaluating from scratch. ')
-    print(f'Loading model at epoch {best_epoch:d}...')
-    
-    ckpt = torch.load(path_save_best, map_location=device)
-    model.load_state_dict(ckpt['model_state_dict'])
+        dataset.load_test_ns()
 
-    model.reset_memory()
-    neighbor_loader.reset_state()
+        ts_scores, _ = tgb_test(
+            data=data, 
+            model=model,
+            loader=test_loader,
+            neg_sampler=neg_sampler,
+            neighbor_loader=neighbor_loader,
+            split_mode="test",
+            helper=assoc,
+            evaluator=evaluator,
+            metric=metric,
+            device=device,
+            pbar=conf['debug']
+        )
 
-    tr_scores, _ = tgb_test(
-        data=data, 
-        model=model,
-        loader=train_loader,
-        neg_sampler=neg_sampler,
-        neighbor_loader=neighbor_loader,
-        split_mode="train",
-        helper=assoc,
-        evaluator=evaluator,
-        metric=metric,
-        device=device,
-        pbar=conf['debug']
-    )
+        ckpt['test_score'] = ts_scores
+        ckpt['val_score'] = vl_scores
+        ckpt['train_score'] = tr_scores
+        ckpt['train_ended'] = True
+        torch.save(ckpt, path_save_best)
 
-    vl_scores, _ = tgb_test(
-        data=data, 
-        model=model,
-        loader=val_loader,
-        neg_sampler=neg_sampler,
-        neighbor_loader=neighbor_loader,
-        split_mode="val",
-        helper=assoc,
-        evaluator=evaluator,
-        metric=metric,
-        device=device,
-        pbar=conf['debug']
-    )
-
-    dataset.load_test_ns()
-
-    ts_scores, _ = tgb_test(
-        data=data, 
-        model=model,
-        loader=test_loader,
-        neg_sampler=neg_sampler,
-        neighbor_loader=neighbor_loader,
-        split_mode="test",
-        helper=assoc,
-        evaluator=evaluator,
-        metric=metric,
-        device=device,
-        pbar=conf['debug']
-    )
-
-    ckpt['test_score'] = ts_scores
-    ckpt['val_score'] = vl_scores
-    ckpt['train_score'] = tr_scores
-    ckpt['train_ended'] = True
-    torch.save(ckpt, path_save_best)
-
-    history = ckpt['history'] if conf['log'] else None
+        history = ckpt['history'] if conf['log'] else None
+    except Exception as err:
+        # Allow to fail for gradient explosion
+        # Make a moot results run
+        print(f"\n{conf} crashed with error {err}.. continuing")
+        ckpt = {}
+        ckpt['test_score'] = {conf['metric']: -np.inf}
+        ckpt['val_score'] = {conf['metric']: -np.inf}
+        ckpt['train_score'] = {conf['metric']: -np.inf}
+        ckpt['train_ended'] = True
+        ckpt["epoch"] = -1
+        history = None
 
     return ckpt['test_score'], ckpt['val_score'], ckpt['train_score'], ckpt['epoch'], conf, history
 
@@ -762,7 +778,7 @@ def link_prediction_single(model_instance, conf):
     model.to(device)
     
     epoch_times = []
-    
+    got_exception = False
     for e in range(best_epoch, conf['epochs']):
         t0 = time.time()
 
@@ -771,38 +787,43 @@ def link_prediction_single(model_instance, conf):
             print('Epoch {:d}:'.format(e))
             pbar = True
 
-        train_losses: List[float] = train(
-            data=data,
-            model=model,
-            optimizer=optimizer,
-            train_loader=train_loader,
-            criterion=criterion,
-            neighbor_loader=neighbor_loader,
-            train_neg_sampler=train_neg_link_sampler,
-            helper=assoc, 
-            requires_grad=conf['model']!=edgebank,
-            device=device,
-            pbar=pbar
-        )
-        
-        model.reset_memory()
-        neighbor_loader.reset_state()
-
-        tr_scores, _ = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
-                            neighbor_loader=neighbor_loader, neg_sampler=train_neg_link_sampler, 
-                            regression=conf['regression'], multiclass=conf['multiclass'], helper=assoc, 
-                            eval_seed=conf['exp_seed'], device=device, eval_name='train_eval',
-                            wandb_log=conf['wandb'], pbar=pbar)
-        
-        if conf['reset_memory_eval']:
+        try:
+            train_losses: List[float] = train(
+                data=data,
+                model=model,
+                optimizer=optimizer,
+                train_loader=train_loader,
+                criterion=criterion,
+                neighbor_loader=neighbor_loader,
+                train_neg_sampler=train_neg_link_sampler,
+                helper=assoc, 
+                requires_grad=conf['model']!=edgebank,
+                device=device,
+                pbar=pbar
+            )
+            
             model.reset_memory()
+            neighbor_loader.reset_state()
 
-        vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
-                                        neighbor_loader=neighbor_loader, neg_sampler=val_neg_link_sampler, 
-                                        regression=conf['regression'], multiclass=conf['multiclass'],
-                                        helper=assoc, eval_seed=conf['exp_seed'], device=device,
-                                        eval_name='val_eval', wandb_log=conf['wandb'], pbar=pbar)
-        
+            tr_scores, _ = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
+                                neighbor_loader=neighbor_loader, neg_sampler=train_neg_link_sampler, 
+                                regression=conf['regression'], multiclass=conf['multiclass'], helper=assoc, 
+                                eval_seed=conf['exp_seed'], device=device, eval_name='train_eval',
+                                wandb_log=conf['wandb'], pbar=pbar)
+            
+            if conf['reset_memory_eval']:
+                model.reset_memory()
+
+            vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
+                                            neighbor_loader=neighbor_loader, neg_sampler=val_neg_link_sampler, 
+                                            regression=conf['regression'], multiclass=conf['multiclass'],
+                                            helper=assoc, eval_seed=conf['exp_seed'], device=device,
+                                            eval_name='val_eval', wandb_log=conf['wandb'], pbar=pbar)
+        except Exception as err:
+            got_exception = True
+            print(f"\n{conf} crashed with error {err}.. continuing")
+            break
+
         lr_scheduler.step(vl_scores[conf['metric']]) # only for pascal voc
 
         history.append({
@@ -836,83 +857,94 @@ def link_prediction_single(model_instance, conf):
         if e - best_epoch > conf['patience']:
             break
 
-    # Evaluate on test
-    if conf['debug']: print('Loading model at epoch {}...'.format(best_epoch))
-    ckpt = torch.load(path_save_best, map_location=device)
-    model.load_state_dict(ckpt['model_state_dict'])
-    ckpt['test_score'] = {}
-    ckpt['val_score'] = {}
-    ckpt['train_score'] = {}
-    ckpt['true_values'] = {}
-    ckpt['loss'] = {}
+    if not got_exception:
+        # Evaluate on test
+        if conf['debug']: print('Loading model at epoch {}...'.format(best_epoch))
+        ckpt = torch.load(path_save_best, map_location=device)
+        model.load_state_dict(ckpt['model_state_dict'])
+        ckpt['test_score'] = {}
+        ckpt['val_score'] = {}
+        ckpt['train_score'] = {}
+        ckpt['true_values'] = {}
+        ckpt['loss'] = {}
 
-    if conf['use_all_strategies_eval']:
-        strategies = dst_strategies
-    else:
-        strategies = [conf['strategy']]
-
-    for strategy in strategies:
-        if conf['regression'] or conf['multiclass']:
-            tmp_train_neg_link_sampler = None
-            tmp_val_neg_link_sampler = None
-            tmp_test_neg_link_sampler = None
-        elif strategies == conf['strategy']:
-            tmp_train_neg_link_sampler = train_neg_link_sampler
-            tmp_val_neg_link_sampler = val_neg_link_sampler
-            tmp_test_neg_link_sampler = test_neg_link_sampler
+        if conf['use_all_strategies_eval']:
+            strategies = dst_strategies
         else:
-            (tmp_train_src_nodes, tmp_train_dst_nodes, 
-             tmp_val_src_nodes, tmp_val_dst_nodes, 
-             tmp_test_src_nodes, tmp_test_dst_nodes) = get_node_sets(strategy, train_data, val_data, test_data)
+            strategies = [conf['strategy']]
 
-            neg_sampler_instance = getattr(negative_sampler, conf['neg_sampler'])
-            tmp_train_neg_link_sampler = neg_sampler_instance(tmp_train_src_nodes, tmp_train_dst_nodes,
-                                                              check_link_existence=not conf['no_check_link_existence'],
-                                                              name='train', seed=conf['exp_seed']+1)
-            tmp_val_neg_link_sampler = neg_sampler_instance(tmp_val_src_nodes, tmp_val_dst_nodes,
-                                                            check_link_existence=not conf['no_check_link_existence'],
-                                                            name='val', seed=conf['exp_seed']+2)
-            tmp_test_neg_link_sampler = neg_sampler_instance(tmp_test_src_nodes, tmp_test_dst_nodes,
-                                                             check_link_existence=not conf['no_check_link_existence'],
-                                                             name='test', seed=conf['exp_seed']+3)
+        for strategy in strategies:
+            if conf['regression'] or conf['multiclass']:
+                tmp_train_neg_link_sampler = None
+                tmp_val_neg_link_sampler = None
+                tmp_test_neg_link_sampler = None
+            elif strategies == conf['strategy']:
+                tmp_train_neg_link_sampler = train_neg_link_sampler
+                tmp_val_neg_link_sampler = val_neg_link_sampler
+                tmp_test_neg_link_sampler = test_neg_link_sampler
+            else:
+                (tmp_train_src_nodes, tmp_train_dst_nodes, 
+                tmp_val_src_nodes, tmp_val_dst_nodes, 
+                tmp_test_src_nodes, tmp_test_dst_nodes) = get_node_sets(strategy, train_data, val_data, test_data)
 
-        model.reset_memory()
-        neighbor_loader.reset_state()
+                neg_sampler_instance = getattr(negative_sampler, conf['neg_sampler'])
+                tmp_train_neg_link_sampler = neg_sampler_instance(tmp_train_src_nodes, tmp_train_dst_nodes,
+                                                                check_link_existence=not conf['no_check_link_existence'],
+                                                                name='train', seed=conf['exp_seed']+1)
+                tmp_val_neg_link_sampler = neg_sampler_instance(tmp_val_src_nodes, tmp_val_dst_nodes,
+                                                                check_link_existence=not conf['no_check_link_existence'],
+                                                                name='val', seed=conf['exp_seed']+2)
+                tmp_test_neg_link_sampler = neg_sampler_instance(tmp_test_src_nodes, tmp_test_dst_nodes,
+                                                                check_link_existence=not conf['no_check_link_existence'],
+                                                                name='test', seed=conf['exp_seed']+3)
 
-        tr_scores, tr_true_values = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
-                                         neighbor_loader=neighbor_loader, neg_sampler=tmp_train_neg_link_sampler, 
-                                         regression=conf['regression'], multiclass=conf['multiclass'],
-                                         helper=assoc, eval_seed=conf['exp_seed'], device=device, 
-                                         eval_name='train_eval', wandb_log=conf['wandb'])
-        
-        if conf['reset_memory_eval']:
             model.reset_memory()
+            neighbor_loader.reset_state()
 
-        vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
-                                         neighbor_loader=neighbor_loader, neg_sampler=tmp_val_neg_link_sampler, 
-                                         regression=conf['regression'], multiclass=conf['multiclass'],
-                                         helper=assoc, eval_seed=conf['exp_seed'], device=device, 
-                                         eval_name='val_eval', wandb_log=conf['wandb'])
-        
-        if conf['reset_memory_eval']:
-            model.reset_memory()
+            tr_scores, tr_true_values = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
+                                            neighbor_loader=neighbor_loader, neg_sampler=tmp_train_neg_link_sampler, 
+                                            regression=conf['regression'], multiclass=conf['multiclass'],
+                                            helper=assoc, eval_seed=conf['exp_seed'], device=device, 
+                                            eval_name='train_eval', wandb_log=conf['wandb'])
+            
+            if conf['reset_memory_eval']:
+                model.reset_memory()
 
-        ts_scores, ts_true_values = eval(data=data, model=model, loader=test_loader, criterion=criterion, 
-                                         neighbor_loader=neighbor_loader, neg_sampler=tmp_test_neg_link_sampler, 
-                                         regression=conf['regression'], multiclass=conf['multiclass'],
-                                         helper=assoc, eval_seed=conf['exp_seed'], device=device, 
-                                         eval_name='test_eval', wandb_log=conf['wandb'])
+            vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
+                                            neighbor_loader=neighbor_loader, neg_sampler=tmp_val_neg_link_sampler, 
+                                            regression=conf['regression'], multiclass=conf['multiclass'],
+                                            helper=assoc, eval_seed=conf['exp_seed'], device=device, 
+                                            eval_name='val_eval', wandb_log=conf['wandb'])
+            
+            if conf['reset_memory_eval']:
+                model.reset_memory()
 
-        ckpt['test_score'][strategy] = ts_scores
-        ckpt['val_score'][strategy] = vl_scores
-        ckpt['train_score'][strategy] = tr_scores
-        ckpt['true_values'][strategy] = (tr_true_values, vl_true_values, ts_true_values)
-        ckpt['loss'][strategy] = (tr_scores['loss'], vl_scores['loss'], ts_scores['loss'])
+            ts_scores, ts_true_values = eval(data=data, model=model, loader=test_loader, criterion=criterion, 
+                                            neighbor_loader=neighbor_loader, neg_sampler=tmp_test_neg_link_sampler, 
+                                            regression=conf['regression'], multiclass=conf['multiclass'],
+                                            helper=assoc, eval_seed=conf['exp_seed'], device=device, 
+                                            eval_name='test_eval', wandb_log=conf['wandb'])
 
-    ckpt['train_ended'] = True
-    torch.save(ckpt, path_save_best)
+            ckpt['test_score'][strategy] = ts_scores
+            ckpt['val_score'][strategy] = vl_scores
+            ckpt['train_score'][strategy] = tr_scores
+            ckpt['true_values'][strategy] = (tr_true_values, vl_true_values, ts_true_values)
+            ckpt['loss'][strategy] = (tr_scores['loss'], vl_scores['loss'], ts_scores['loss'])
 
-    history = ckpt['history'] if conf['log'] else None
+        ckpt['train_ended'] = True
+        torch.save(ckpt, path_save_best)
+
+        history = ckpt['history'] if conf['log'] else None
+    else:
+        # Make a moot results run
+        ckpt = {}
+        ckpt['test_score'] = {conf['metric']: np.inf if conf['regression'] else -np.inf}
+        ckpt['val_score'] = {conf['metric']: np.inf if conf['regression'] else -np.inf}
+        ckpt['train_score'] = {conf['metric']: np.inf if conf['regression'] else -np.inf}
+        ckpt['train_ended'] = True
+        ckpt["epoch"] = -1
+        history = None
+    
     conf['model size'] = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     return ckpt['test_score'], ckpt['val_score'], ckpt['train_score'], ckpt['epoch'], conf, history
